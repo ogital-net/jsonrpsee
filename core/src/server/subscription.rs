@@ -35,7 +35,7 @@ use crate::{error::SubscriptionError, traits::IdProvider};
 use jsonrpsee_types::SubscriptionPayload;
 use jsonrpsee_types::response::SubscriptionPayloadError;
 use jsonrpsee_types::{ErrorObjectOwned, Id, SubscriptionId, SubscriptionResponse};
-use parking_lot::Mutex;
+use std::sync::Mutex;
 use rustc_hash::FxHashMap;
 use serde::{Serialize, de::DeserializeOwned};
 use serde_json::value::RawValue;
@@ -250,7 +250,7 @@ impl PendingSubscriptionSink {
 
 		if success {
 			let (tx, rx) = mpsc::channel(1);
-			self.subscribers.lock().insert(self.uniq_sub.clone(), (self.inner.clone(), rx));
+			self.subscribers.lock().unwrap().insert(self.uniq_sub.clone(), (self.inner.clone(), rx));
 			Ok(SubscriptionSink {
 				inner: self.inner,
 				method: self.method,
@@ -409,7 +409,7 @@ impl SubscriptionSink {
 impl Drop for SubscriptionSink {
 	fn drop(&mut self) {
 		if self.is_active_subscription() {
-			self.subscribers.lock().remove(&self.uniq_sub);
+			self.subscribers.lock().unwrap().remove(&self.uniq_sub);
 		}
 	}
 }

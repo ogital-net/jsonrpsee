@@ -32,7 +32,6 @@ http-body = { workspace = true, optional = true }
 http-body-util = { workspace = true, optional = true }
 rustc-hash = { workspace = true, optional = true }
 rand = { workspace = true, optional = true }
-parking_lot = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true }
 tower = { workspace = true, optional = true }
 futures-timer = { workspace = true, optional = true }
@@ -45,7 +44,7 @@ wasm-bindgen-futures = { workspace = true, optional = true }
 [features]
 default = []
 http-helpers = ["bytes", "futures-util", "http-body", "http-body-util", "http"]
-server = ["futures-util", "rustc-hash/std", "parking_lot", "rand", "tokio/rt", "tokio/sync", "tokio/macros", "tokio/time", "tower", "http", "pin-project"]
+server = ["futures-util", "rustc-hash/std", "rand", "tokio/rt", "tokio/sync", "tokio/macros", "tokio/time", "tower", "http", "pin-project"]
 client = ["futures-util/sink", "tokio/sync", "tower", "pin-project", "http"]
 async-client = [
 	"client",

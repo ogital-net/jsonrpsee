@@ -632,7 +632,7 @@ impl TryFrom<url::Url> for Target {
 		}
 
 		let basic_auth = if let Some(pwd) = url.password() {
-		let digest = base64_simd::STANDARD.encode_to_string(format!("{}:{}", url.username(), pwd));
+			let digest = base64_simd::STANDARD.encode_to_string(format!("{}:{}", url.username(), pwd));
 			let val = HeaderValue::from_str(&format!("Basic {digest}"))
 				.map_err(|_| WsHandshakeError::Url("Header value `authorization basic user:pwd` invalid".into()))?;
 

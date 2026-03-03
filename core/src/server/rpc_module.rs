@@ -1013,7 +1013,7 @@ impl<Context: Send + Sync + 'static> RpcModule<Context> {
 					};
 
 					let key = SubscriptionKey { conn_id, sub_id: sub_id.into_owned() };
-					let result = subscribers.lock().remove(&key).is_some();
+					let result = subscribers.lock().unwrap().remove(&key).is_some();
 
 					if !result {
 						tracing::debug!(
