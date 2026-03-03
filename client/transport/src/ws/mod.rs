@@ -30,7 +30,6 @@ use std::io;
 use std::net::SocketAddr;
 use std::time::Duration;
 
-use base64::Engine;
 use futures_util::io::{BufReader, BufWriter};
 use jsonrpsee_core::Cow;
 use jsonrpsee_core::TEN_MB_SIZE_BYTES;
@@ -633,7 +632,7 @@ impl TryFrom<url::Url> for Target {
 		}
 
 		let basic_auth = if let Some(pwd) = url.password() {
-			let digest = base64::engine::general_purpose::STANDARD.encode(format!("{}:{}", url.username(), pwd));
+		let digest = base64_simd::STANDARD.encode_to_string(format!("{}:{}", url.username(), pwd));
 			let val = HeaderValue::from_str(&format!("Basic {digest}"))
 				.map_err(|_| WsHandshakeError::Url("Header value `authorization basic user:pwd` invalid".into()))?;
 
@@ -763,10 +762,8 @@ mod tests {
 
 	#[test]
 	fn ws_with_username_and_password() {
-		use base64::Engine;
-
 		let target = parse_target("ws://user:pwd@127.0.0.1").unwrap();
-		let digest = base64::engine::general_purpose::STANDARD.encode("user:pwd");
+		let digest = base64_simd::STANDARD.encode_to_string("user:pwd");
 		let basic_auth = HeaderValue::from_str(&format!("Basic {digest}")).unwrap();
 
 		assert_ws_target(target, "127.0.0.1", "127.0.0.1", Mode::Plain, "/", Some(basic_auth));

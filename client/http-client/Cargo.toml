@@ -17,7 +17,7 @@ publish = true
 workspace = true
 
 [dependencies]
-base64 = { workspace = true }
+base64-simd = { workspace = true }
 hyper = { workspace = true, features = ["client", "http1", "http2"] }
 hyper-rustls = { workspace = true, features = ["http1", "http2", "tls12", "logging", "ring"], optional = true }
 hyper-util = { workspace = true, features = ["client", "client-legacy", "tokio", "http1", "http2"] }

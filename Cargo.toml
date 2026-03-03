@@ -43,7 +43,7 @@ jsonrpsee-ws-client = { path = "client/ws-client", version = "0.26.0" }
 
 # Deps used by the jsonrpsee crates.
 async-trait = "0.1"
-base64 = { version = "0.22", default-features = false, features = ["alloc"] }
+base64-simd = { version = "0.8", default-features = false, features = ["alloc"] }
 bytes = "1.6"
 futures-channel = { version = "0.3.14", default-features = false }
 futures-timer = "3"
