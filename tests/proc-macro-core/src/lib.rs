@@ -1,7 +1,7 @@
 //! Test module for the proc-macro API to make sure that it compiles with the core features.
 
 use jsonrpsee::PendingSubscriptionSink;
-use jsonrpsee::core::{SubscriptionResult, async_trait, to_json_raw_value};
+use jsonrpsee::core::{SubscriptionResult, to_json_raw_value};
 use jsonrpsee::proc_macros::rpc;
 use jsonrpsee::types::ErrorObjectOwned;
 use serde::{Deserialize, Serialize};
@@ -40,7 +40,6 @@ pub trait Api {
 	fn blocking_method(&self, a: String) -> Result<u16, ErrorObjectOwned>;
 }
 
-#[async_trait]
 impl ApiServer for () {
 	fn sync_call(&self, _: String) -> Result<String, ErrorObjectOwned> {
 		Ok("sync_call".to_string())

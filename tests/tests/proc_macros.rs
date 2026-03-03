@@ -44,7 +44,7 @@ use serde_json::json;
 
 mod rpc_impl {
 	use jsonrpsee::core::server::{IntoSubscriptionCloseResponse, PendingSubscriptionSink, SubscriptionCloseResponse};
-	use jsonrpsee::core::{SubscriptionResult, async_trait};
+	use jsonrpsee::core::SubscriptionResult;
 	use jsonrpsee::proc_macros::rpc;
 	use jsonrpsee::types::{ErrorObject, ErrorObjectOwned};
 
@@ -146,7 +146,6 @@ mod rpc_impl {
 
 	pub struct RpcServerImpl;
 
-	#[async_trait]
 	impl RpcServer for RpcServerImpl {
 		async fn async_method(&self, _param_a: u8, _param_b: String) -> Result<u16, ErrorObjectOwned> {
 			Ok(42)
@@ -300,7 +299,6 @@ async fn macro_zero_copy_cow() {
 
 #[tokio::test]
 async fn namespace_separator_dot_formatting_works() {
-	use jsonrpsee::core::async_trait;
 	use jsonrpsee::proc_macros::rpc;
 	use serde_json::json;
 
@@ -312,7 +310,6 @@ async fn namespace_separator_dot_formatting_works() {
 
 	struct DotImpl;
 
-	#[async_trait]
 	impl DotSeparatorRpcServer for DotImpl {
 		fn dot(&self, a: u32, b: &str) -> Result<String, jsonrpsee::types::ErrorObjectOwned> {
 			Ok(format!("Called with: {}, {}", a, b))
@@ -327,7 +324,6 @@ async fn namespace_separator_dot_formatting_works() {
 
 #[tokio::test]
 async fn namespace_separator_slash_formatting_works() {
-	use jsonrpsee::core::async_trait;
 	use jsonrpsee::proc_macros::rpc;
 	use serde_json::json;
 
@@ -339,7 +335,6 @@ async fn namespace_separator_slash_formatting_works() {
 
 	struct SlashImpl;
 
-	#[async_trait]
 	impl SlashSeparatorRpcServer for SlashImpl {
 		fn add(&self, x: i32, y: i32) -> Result<i32, jsonrpsee::types::ErrorObjectOwned> {
 			Ok(x + y)

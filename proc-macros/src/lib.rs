@@ -95,7 +95,6 @@ pub(crate) mod visitor;
 /// Server code that will be generated:
 ///
 /// ```ignore
-/// #[async_trait]
 /// pub trait RpcServer {
 ///     // RPC methods are normal methods and can be either sync or async.
 ///     async fn async_method(&self, param_a: u8, param_b: String) -> u16;
@@ -114,7 +113,6 @@ pub(crate) mod visitor;
 /// Client code that will be generated:
 ///
 /// ```ignore
-/// #[async_trait]
 /// pub trait RpcClient: SubscriptionClient {
 ///     // In client implementation all the methods are (obviously) async.
 ///     async fn async_method(&self, param_a: u8, param_b: String) -> Result<u16, Error> {
@@ -233,7 +231,7 @@ pub(crate) mod visitor;
 /// mod rpc_impl {
 ///     use jsonrpsee::{proc_macros::rpc, Extensions};
 ///     use jsonrpsee::server::{PendingSubscriptionSink, SubscriptionMessage, IntoSubscriptionCloseResponse, SubscriptionCloseResponse};
-///     use jsonrpsee::core::{async_trait, RpcResult, SubscriptionResult, to_json_raw_value};
+///     use jsonrpsee::core::{RpcResult, SubscriptionResult, to_json_raw_value};
 ///
 ///     enum CloseResponse {
 ///         None,
@@ -314,7 +312,6 @@ pub(crate) mod visitor;
 ///     pub struct RpcServerImpl;
 ///
 ///     // Note that the trait name we use is `MyRpcServer`, not `MyRpc`!
-///     #[async_trait]
 ///     impl MyRpcServer for RpcServerImpl {
 ///         async fn async_method(&self, _param_a: u8, _param_b: String) -> RpcResult<u16> {
 ///             Ok(42)

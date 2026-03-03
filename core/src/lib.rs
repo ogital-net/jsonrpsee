@@ -60,7 +60,6 @@ cfg_client_or_server! {
 	pub mod middleware;
 }
 
-pub use async_trait::async_trait;
 pub use error::{RegisterMethodError, SubscriptionError};
 
 /// JSON-RPC result.
@@ -76,7 +75,6 @@ mod proc_macros_support;
 /// dependencies to be explicitly added on the client side.
 #[doc(hidden)]
 pub mod __reexports {
-	pub use async_trait::async_trait;
 	pub use serde;
 	pub use serde_json;
 

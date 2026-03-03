@@ -26,7 +26,7 @@
 
 use std::net::SocketAddr;
 
-use jsonrpsee::core::{SubscriptionResult, async_trait, client::Subscription};
+use jsonrpsee::core::{SubscriptionResult, client::Subscription};
 use jsonrpsee::proc_macros::rpc;
 use jsonrpsee::server::{PendingSubscriptionSink, Server};
 use jsonrpsee::types::ErrorObjectOwned;
@@ -58,7 +58,6 @@ where
 
 pub struct RpcServerImpl;
 
-#[async_trait]
 impl RpcServer<ExampleHash, ExampleStorageKey> for RpcServerImpl {
 	async fn storage_keys(
 		&self,

@@ -36,7 +36,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 
 use futures::FutureExt;
 use jsonrpsee::core::middleware::RpcServiceBuilder;
-use jsonrpsee::core::{SubscriptionResult, async_trait};
+use jsonrpsee::core::{SubscriptionResult};
 use jsonrpsee::proc_macros::rpc;
 use jsonrpsee::server::{
 	ConnectionGuard, ConnectionState, HttpRequest, ServerConfig, ServerHandle, StopHandle, http,
@@ -58,7 +58,6 @@ pub trait Rpc {
 	async fn close_conn_from_sub(&self) -> SubscriptionResult;
 }
 
-#[async_trait]
 impl RpcServer for () {
 	async fn close_conn(&self, ext: &Extensions) -> Result<(), ErrorObjectOwned> {
 		let tx = ext.get::<mpsc::Sender<()>>().unwrap();

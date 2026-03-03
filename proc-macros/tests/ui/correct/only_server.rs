@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 
-use jsonrpsee::core::{RpcResult, SubscriptionResult, async_trait, to_json_raw_value};
+use jsonrpsee::core::{RpcResult, SubscriptionResult, to_json_raw_value};
 use jsonrpsee::proc_macros::rpc;
 use jsonrpsee::server::{PendingSubscriptionSink, ServerBuilder};
 
@@ -18,7 +18,6 @@ pub trait Rpc {
 
 pub struct RpcServerImpl;
 
-#[async_trait]
 impl RpcServer for RpcServerImpl {
 	async fn async_method(&self, _param_a: u8, _param_b: String) -> RpcResult<u16> {
 		Ok(42u16)

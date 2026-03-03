@@ -45,7 +45,6 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
 use futures::FutureExt;
-use jsonrpsee::core::async_trait;
 use jsonrpsee::core::middleware::{Batch, Notification, RpcServiceBuilder, RpcServiceT};
 use jsonrpsee::http_client::HttpClient;
 use jsonrpsee::proc_macros::rpc;
@@ -142,7 +141,6 @@ pub trait Rpc {
 	async fn say_hello(&self) -> Result<String, ErrorObjectOwned>;
 }
 
-#[async_trait]
 impl RpcServer for () {
 	async fn say_hello(&self) -> Result<String, ErrorObjectOwned> {
 		Ok("lo".to_string())

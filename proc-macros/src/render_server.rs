@@ -44,13 +44,11 @@ impl RpcDescription {
 
 		let method_impls = self.render_methods()?;
 		let into_rpc_impl = self.render_into_rpc()?;
-		let async_trait = self.jrps_server_item(quote! { core::__reexports::async_trait });
 
 		// Doc-comment to be associated with the server.
 		let doc_comment = format!("Server trait implementation for the `{}` RPC API.", &self.trait_def.ident);
 
 		let trait_impl = quote! {
-			#[#async_trait]
 			#[doc = #doc_comment]
 			pub trait #trait_name #impl_generics: Sized + Send + Sync + 'static #where_clause {
 				#method_impls
@@ -73,6 +71,22 @@ impl RpcDescription {
 				method_sig.sig.inputs.insert(1, ext);
 			}
 
+			// Convert async fn to -> impl Future<Output = T> + Send
+			if method_sig.sig.asyncness.is_some() {
+				method_sig.sig.asyncness = None;
+				let output = &method_sig.sig.output;
+				let ret_ty = match output {
+					syn::ReturnType::Default => quote!(()),
+					syn::ReturnType::Type(_, ty) => quote!(#ty),
+				};
+				method_sig.sig.output = syn::parse_quote!(-> impl std::future::Future<Output = #ret_ty> + Send);
+				
+				// If there's a default implementation, wrap the body in an async move block
+				if let Some(ref mut default_impl) = method_sig.default {
+					*default_impl = syn::parse_quote!({ async move #default_impl });
+				}
+			}
+
 			quote! {
 				#docs
 				#method_sig
@@ -93,6 +107,22 @@ impl RpcDescription {
 				// Add `Extension` as the third parameter to the signature.
 				let ext: syn::FnArg = syn::parse_quote!(ext: &#ext_ty);
 				sub_sig.sig.inputs.insert(2, ext);
+			}
+
+			// Convert async fn to -> impl Future<Output = T> + Send
+			if sub_sig.sig.asyncness.is_some() {
+				sub_sig.sig.asyncness = None;
+				let output = &sub_sig.sig.output;
+				let ret_ty = match output {
+					syn::ReturnType::Default => quote!(()),
+					syn::ReturnType::Type(_, ty) => quote!(#ty),
+				};
+				sub_sig.sig.output = syn::parse_quote!(-> impl std::future::Future<Output = #ret_ty> + Send);
+				
+				// If there's a default implementation, wrap the body in an async move block
+				if let Some(ref mut default_impl) = sub_sig.default {
+					*default_impl = syn::parse_quote!({ async move #default_impl });
+				}
 			}
 
 			quote! {

@@ -27,7 +27,7 @@
 use std::net::SocketAddr;
 
 use jsonrpsee::core::middleware::{Batch, Notification, Request, RpcServiceT};
-use jsonrpsee::core::{SubscriptionResult, async_trait};
+use jsonrpsee::core::{SubscriptionResult};
 use jsonrpsee::proc_macros::rpc;
 use jsonrpsee::server::PendingSubscriptionSink;
 use jsonrpsee::types::{ErrorObject, ErrorObjectOwned};
@@ -77,7 +77,6 @@ where
 
 pub struct RpcServerImpl;
 
-#[async_trait]
 impl RpcServer for RpcServerImpl {
 	async fn method(&self, ext: &Extensions) -> Result<usize, ErrorObjectOwned> {
 		let conn_id = ext
