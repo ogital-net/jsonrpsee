@@ -26,7 +26,8 @@
 
 //! Subscription ID providers.
 
-use rand::{distr::Alphanumeric, Rng};
+use rand::distributions::Alphanumeric;
+use rand::Rng;
 
 use crate::traits::IdProvider;
 use jsonrpsee_types::SubscriptionId;
@@ -57,7 +58,7 @@ impl RandomStringIdProvider {
 
 impl IdProvider for RandomStringIdProvider {
 	fn next_id(&self) -> SubscriptionId<'static> {
-		let mut rng = rand::rng();
+		let mut rng = rand::thread_rng();
 		(&mut rng).sample_iter(Alphanumeric).take(self.len).map(char::from).collect::<String>().into()
 	}
 }
