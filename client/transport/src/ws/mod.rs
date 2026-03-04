@@ -656,6 +656,7 @@ fn build_tls_config(cert_store: &CertificateStore) -> Result<tokio_rustls::TlsCo
 			use rustls_platform_verifier::ConfigVerifierExt;
 
 			rustls::ClientConfig::with_platform_verifier()
+				.map_err(|e| WsHandshakeError::CertificateStore(io::Error::new(io::ErrorKind::Other, e.to_string())))?
 		}
 		#[cfg(not(feature = "tls-rustls-platform-verifier"))]
 		CertificateStore::Native => {

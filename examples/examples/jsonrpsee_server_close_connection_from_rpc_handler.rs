@@ -35,8 +35,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use futures::FutureExt;
+use jsonrpsee::core::SubscriptionResult;
 use jsonrpsee::core::middleware::RpcServiceBuilder;
-use jsonrpsee::core::{SubscriptionResult};
 use jsonrpsee::proc_macros::rpc;
 use jsonrpsee::server::{
 	ConnectionGuard, ConnectionState, HttpRequest, ServerConfig, ServerHandle, StopHandle, http,

@@ -255,8 +255,11 @@ impl<L> HttpTransportClientBuilder<L> {
 					CertificateStore::Native => {
 						use rustls_platform_verifier::ConfigVerifierExt;
 
+						let tls_config = rustls::ClientConfig::with_platform_verifier()
+							.map_err(|_| Error::InvalidCertficateStore)?;
+
 						hyper_rustls::HttpsConnectorBuilder::new()
-							.with_tls_config(rustls::ClientConfig::with_platform_verifier())
+							.with_tls_config(tls_config)
 							.https_or_http()
 							.enable_all_versions()
 							.wrap_connector(http_conn)

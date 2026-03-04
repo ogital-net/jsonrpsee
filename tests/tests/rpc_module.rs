@@ -139,7 +139,7 @@ async fn calling_method_without_server() {
 
 #[tokio::test]
 async fn calling_method_without_server_using_proc_macro() {
-	use jsonrpsee::{proc_macros::rpc};
+	use jsonrpsee::proc_macros::rpc;
 	// Setup
 	#[derive(Debug, Deserialize, Serialize)]
 	#[allow(unreachable_pub)]

@@ -43,8 +43,8 @@ use jsonrpsee::ws_client::*;
 use serde_json::json;
 
 mod rpc_impl {
-	use jsonrpsee::core::server::{IntoSubscriptionCloseResponse, PendingSubscriptionSink, SubscriptionCloseResponse};
 	use jsonrpsee::core::SubscriptionResult;
+	use jsonrpsee::core::server::{IntoSubscriptionCloseResponse, PendingSubscriptionSink, SubscriptionCloseResponse};
 	use jsonrpsee::proc_macros::rpc;
 	use jsonrpsee::types::{ErrorObject, ErrorObjectOwned};
 

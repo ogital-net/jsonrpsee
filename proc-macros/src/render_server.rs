@@ -80,7 +80,7 @@ impl RpcDescription {
 					syn::ReturnType::Type(_, ty) => quote!(#ty),
 				};
 				method_sig.sig.output = syn::parse_quote!(-> impl std::future::Future<Output = #ret_ty> + Send);
-				
+
 				// If there's a default implementation, wrap the body in an async move block
 				if let Some(ref mut default_impl) = method_sig.default {
 					*default_impl = syn::parse_quote!({ async move #default_impl });
@@ -118,7 +118,7 @@ impl RpcDescription {
 					syn::ReturnType::Type(_, ty) => quote!(#ty),
 				};
 				sub_sig.sig.output = syn::parse_quote!(-> impl std::future::Future<Output = #ret_ty> + Send);
-				
+
 				// If there's a default implementation, wrap the body in an async move block
 				if let Some(ref mut default_impl) = sub_sig.default {
 					*default_impl = syn::parse_quote!({ async move #default_impl });
