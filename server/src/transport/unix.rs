@@ -31,10 +31,13 @@ pub enum UnixError {
 /// request is a single or a batch.
 /// Returns `Err` if the body was too large or the body couldn't be read.
 #[allow(dead_code)]
-pub async fn read_body(
-	stream: tokio::net::UnixStream,
+pub async fn read_body<S>(
+	stream: S,
 	max_body_size: u32,
-) -> Result<(Vec<u8>, bool), UnixError> {
+) -> Result<(Vec<u8>, bool), UnixError>
+where
+	S: tokio::io::AsyncRead + Unpin,
+{
 	let reader = tokio::io::BufReader::new(stream);
 	let limited_reader = reader.take(max_body_size as u64);
 	let mut limited_reader = tokio::io::BufReader::new(limited_reader);
