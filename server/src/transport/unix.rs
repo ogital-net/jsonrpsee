@@ -98,8 +98,8 @@ where
 		};
 
 		tracing::trace!(
-			target: "jsonrpsee-uds",
-			"Unix socket body (netstring): {}",
+			target: "jsonrpsee-stream",
+			"Raw stream body (netstring): {}",
 			std::str::from_utf8(&data).unwrap_or("Invalid UTF-8 data")
 		);
 
@@ -138,8 +138,8 @@ where
 	};
 
 	tracing::trace!(
-		target: "jsonrpsee-uds",
-		"Unix socket body (newline): {}",
+		target: "jsonrpsee-stream",
+		"Raw stream body (newline): {}",
 		std::str::from_utf8(&buffer).unwrap_or("Invalid UTF-8 data")
 	);
 
@@ -149,9 +149,8 @@ where
 /// Make JSON-RPC Unix domain socket call with a [`RpcServiceBuilder`]
 ///
 /// Fails if the request was a malformed JSON-RPC request.
-#[allow(dead_code)]
-pub async fn call_with_service_builder<L>(
-	connection: &mut tokio::net::UnixStream,
+pub async fn call_with_service_builder<L, IO>(
+	stream: &mut IO,
 	server_cfg: ServerConfig,
 	conn: ConnectionState,
 	methods: impl Into<Methods>,
@@ -164,6 +163,7 @@ where
 			BatchResponse = MethodResponse,
 			NotificationResponse = MethodResponse,
 		> + Send,
+	IO: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
 {
 	let ServerConfig { max_response_body_size, batch_requests_config, max_request_body_size, .. } = server_cfg;
 
@@ -174,11 +174,12 @@ where
 		RpcServiceCfg::OnlyCalls,
 	));
 
-	let rp = call_with_service(connection, batch_requests_config, max_request_body_size, rpc_service).await;
+	let rp = call_with_service(stream, batch_requests_config, max_request_body_size, rpc_service).await;
 
 	drop(conn);
 
-	connection.write_all(rp.as_bytes()).await?;
+	dbg!(&rp);
+	stream.write_all(rp.as_bytes()).await?;
 
 	Ok(())
 }
@@ -186,8 +187,8 @@ where
 /// Make JSON-RPC Unix domain socket call with a [`RpcServiceBuilder`]
 ///
 /// Fails if the request was a malformed JSON-RPC request.
-pub async fn call_with_service<S>(
-	connection: &mut tokio::net::UnixStream,
+pub async fn call_with_service<S, IO>(
+	stream: &mut IO,
 	batch_config: BatchRequestConfig,
 	max_request_size: u32,
 	rpc_service: S,
@@ -198,8 +199,9 @@ where
 			BatchResponse = MethodResponse,
 			NotificationResponse = MethodResponse,
 		> + Send,
+	IO: tokio::io::AsyncRead + Unpin,
 {
-	let (body, is_single) = match read_body(connection, max_request_size).await {
+	let (body, is_single) = match read_body(stream, max_request_size).await {
 		Ok(r) => r,
 		Err(UnixError::TooLarge) => return response::too_large(max_request_size),
 		Err(UnixError::Malformed) => return response::malformed(),
