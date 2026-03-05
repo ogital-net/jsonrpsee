@@ -1,7 +1,7 @@
 error: use of deprecated method `DeprecatedClient::async_method`: please use `new_method` instead
-  --> tests/ui/incorrect/rpc/rpc_deprecated_method.rs:63:20
+  --> tests/ui/incorrect/rpc/rpc_deprecated_method.rs:62:20
    |
-63 |     assert_eq!(client.async_method().await.unwrap(), 16);
+62 |     assert_eq!(client.async_method().await.unwrap(), 16);
    |                       ^^^^^^^^^^^^
    |
 note: the lint level is defined here
