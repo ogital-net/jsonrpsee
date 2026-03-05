@@ -1,14 +1,17 @@
-use crate::{ConnectionState, middleware::rpc::RpcService, server::ServerConfig};
+use crate::{
+	BatchRequestConfig, ConnectionState, LOG_TARGET,
+	middleware::rpc::{RpcService, RpcServiceCfg},
+	server::{ServerConfig, handle_rpc_call},
+};
 use jsonrpsee_core::{
 	BoxError,
 	middleware::{RpcServiceBuilder, RpcServiceT},
 	server::{MethodResponse, Methods},
 };
-use tokio::io::{AsyncBufReadExt, AsyncReadExt};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 
 /// Represents error that can occur when reading from a Unix domain socket.
 #[derive(Debug, thiserror::Error)]
-#[allow(dead_code)]
 pub enum UnixError {
 	/// The message was too large.
 	#[error("The message was too big")]
@@ -26,7 +29,6 @@ pub enum UnixError {
 /// Returns `Some((size, colon_index))` if the buffer contains a valid netstring size prefix,
 /// where `size` is the u32 size and `colon_index` is the index of the ':' delimiter.
 /// Returns `None` if the buffer doesn't contain a valid netstring prefix.
-#[allow(dead_code)]
 fn decode_netstring_size(buf: &[u8]) -> Option<(u32, usize)> {
 	// Find the position of the first ':' character
 	let colon_pos = buf.iter().position(|&b| b == b':')?;
@@ -50,7 +52,6 @@ fn decode_netstring_size(buf: &[u8]) -> Option<(u32, usize)> {
 /// Returns `Ok((bytes, single))` if the body was in valid size range; and a bool indicating whether the JSON-RPC
 /// request is a single or a batch.
 /// Returns `Err` if the body was too large or the body couldn't be read.
-#[allow(dead_code)]
 pub async fn read_body<S>(stream: S, max_body_size: u32) -> Result<(Vec<u8>, bool), UnixError>
 where
 	S: tokio::io::AsyncRead + Unpin,
@@ -150,11 +151,11 @@ where
 /// Fails if the request was a malformed JSON-RPC request.
 #[allow(dead_code)]
 pub async fn call_with_service_builder<L>(
-	_connection: tokio::net::UnixStream,
-	_server_cfg: ServerConfig,
-	_conn: ConnectionState,
-	_methods: impl Into<Methods>,
-	_rpc_service: RpcServiceBuilder<L>,
+	connection: &mut tokio::net::UnixStream,
+	server_cfg: ServerConfig,
+	conn: ConnectionState,
+	methods: impl Into<Methods>,
+	rpc_service: RpcServiceBuilder<L>,
 ) -> Result<(), BoxError>
 where
 	L: tower::Layer<RpcService>,
@@ -164,7 +165,87 @@ where
 			NotificationResponse = MethodResponse,
 		> + Send,
 {
-	todo!()
+	let ServerConfig { max_response_body_size, batch_requests_config, max_request_body_size, .. } = server_cfg;
+
+	let rpc_service = rpc_service.service(RpcService::new(
+		methods.into(),
+		max_response_body_size as usize,
+		conn.conn_id.into(),
+		RpcServiceCfg::OnlyCalls,
+	));
+
+	let rp = call_with_service(connection, batch_requests_config, max_request_body_size, rpc_service).await;
+
+	drop(conn);
+
+	connection.write_all(rp.as_bytes()).await?;
+
+	Ok(())
+}
+
+/// Make JSON-RPC Unix domain socket call with a [`RpcServiceBuilder`]
+///
+/// Fails if the request was a malformed JSON-RPC request.
+pub async fn call_with_service<S>(
+	connection: &mut tokio::net::UnixStream,
+	batch_config: BatchRequestConfig,
+	max_request_size: u32,
+	rpc_service: S,
+) -> String
+where
+	S: RpcServiceT<
+			MethodResponse = MethodResponse,
+			BatchResponse = MethodResponse,
+			NotificationResponse = MethodResponse,
+		> + Send,
+{
+	let (body, is_single) = match read_body(connection, max_request_size).await {
+		Ok(r) => r,
+		Err(UnixError::TooLarge) => return response::too_large(max_request_size),
+		Err(UnixError::Malformed) => return response::malformed(),
+		Err(UnixError::Io(e)) => {
+			tracing::warn!(target: LOG_TARGET, "Internal error reading request body: {}", e);
+			return response::internal_error();
+		}
+	};
+
+	let rp = handle_rpc_call(&body, is_single, batch_config, &rpc_service, http::Extensions::new()).await;
+	response::from_method_response(rp)
+}
+
+/// Unix response helpers.
+pub mod response {
+	use jsonrpsee_core::server::MethodResponse;
+	use jsonrpsee_types::error::{ErrorCode, reject_too_big_request};
+	use jsonrpsee_types::{ErrorObjectOwned, Id, Response, ResponsePayload};
+
+	/// Create a response for json internal error.
+	pub fn internal_error() -> String {
+		let err = ResponsePayload::<()>::error(ErrorObjectOwned::from(ErrorCode::InternalError));
+		let rp = Response::new(err, Id::Null);
+		serde_json::to_string(&rp).expect("built from known-good data; qed")
+	}
+
+	/// Create a json response for oversized requests
+	pub fn too_large(limit: u32) -> String {
+		let err = ResponsePayload::<()>::error(reject_too_big_request(limit));
+		let rp = Response::new(err, Id::Null);
+		serde_json::to_string(&rp).expect("JSON serialization infallible; qed")
+	}
+
+	/// Create a json response for empty or malformed requests
+	pub fn malformed() -> String {
+		let rp = Response::new(ResponsePayload::<()>::error(ErrorCode::ParseError), Id::Null);
+		serde_json::to_string(&rp).expect("JSON serialization infallible; qed")
+	}
+
+	/// Create a response from a method response.
+	///
+	/// This will include the body and extensions from the method response.
+	pub fn from_method_response(rp: MethodResponse) -> String {
+		let (body, _, _) = rp.into_parts();
+		String::from(Box::<str>::from(body))
+	}
 }
 
 #[cfg(test)]
