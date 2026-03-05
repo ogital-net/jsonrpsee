@@ -38,6 +38,12 @@ macro_rules! cfg_wasm_client {
 	};
 }
 
+macro_rules! cfg_unix_client {
+	($($item:item)*) => {
+		cfg_feature!("jsonrpsee-unix-client", $($item)*);
+	};
+}
+
 macro_rules! cfg_async_client {
 	($($item:item)*) => {
 		cfg_feature!("async-client", $($item)*);

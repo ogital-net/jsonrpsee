@@ -40,6 +40,7 @@ jsonrpsee-server = { path = "server" }
 jsonrpsee-types = { path = "types" }
 jsonrpsee-wasm-client = { path = "client/wasm-client" }
 jsonrpsee-ws-client = { path = "client/ws-client" }
+jsonrpsee-unix-client = { path = "client/unix-client" }
 
 # Deps used by the jsonrpsee crates.
 rand-utils = { git = "https://github.com/ogital-net/rand-utils.git" }

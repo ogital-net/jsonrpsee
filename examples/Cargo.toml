@@ -12,7 +12,7 @@ anyhow = { workspace = true }
 http-body-util = { workspace = true }
 http-body = { workspace = true }
 futures = { workspace = true }
-jsonrpsee = { path = "../jsonrpsee", features = ["server", "http-client", "ws-client", "macros", "client-ws-transport-tls"] }
+jsonrpsee = { path = "../jsonrpsee", features = ["server", "http-client", "ws-client", "unix-client", "macros", "client-ws-transport-tls"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 tokio = { workspace = true, features = ["rt-multi-thread", "time"] }

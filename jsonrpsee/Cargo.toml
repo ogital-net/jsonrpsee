@@ -21,6 +21,7 @@ workspace = true
 # See https://github.com/rust-lang/cargo/issues/5565 for more details.
 jsonrpsee-http-client = { workspace = true, optional = true }
 jsonrpsee-ws-client = { workspace = true, optional = true }
+jsonrpsee-unix-client = { workspace = true, optional = true }
 jsonrpsee-wasm-client = { workspace = true, optional = true }
 jsonrpsee-client-transport = { workspace = true, optional = true }
 jsonrpsee-server = { workspace = true, optional = true }
@@ -39,6 +40,7 @@ async-wasm-client = ["jsonrpsee-core/async-wasm-client"]
 http-client = ["jsonrpsee-http-client", "jsonrpsee-types", "jsonrpsee-core/client"]
 wasm-client = ["jsonrpsee-wasm-client", "jsonrpsee-types", "jsonrpsee-core/client"]
 ws-client = ["jsonrpsee-ws-client", "jsonrpsee-types", "jsonrpsee-core/client"]
+unix-client = ["jsonrpsee-unix-client", "jsonrpsee-types", "jsonrpsee-core/client"]
 macros = ["jsonrpsee-proc-macros", "jsonrpsee-types", "tracing"]
 
 client = ["http-client", "ws-client", "wasm-client", "client-ws-transport-tls", "client-web-transport", "async-client", "async-wasm-client", "client-core"]

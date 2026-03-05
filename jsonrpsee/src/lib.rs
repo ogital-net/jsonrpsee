@@ -68,6 +68,10 @@ cfg_wasm_client! {
 	pub use jsonrpsee_wasm_client as wasm_client;
 }
 
+cfg_unix_client! {
+	pub use jsonrpsee_unix_client as unix_client;
+}
+
 cfg_async_client! {
 	pub use jsonrpsee_core::client::async_client;
 }

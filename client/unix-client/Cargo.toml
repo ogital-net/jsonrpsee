@@ -1,0 +1,38 @@
+[package]
+name = "jsonrpsee-unix-client"
+description = "JSON-RPC Unix domain socket client"
+version.workspace = true
+authors.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+documentation.workspace = true
+homepage.workspace = true
+keywords.workspace = true
+readme.workspace = true
+publish = true
+
+[lints]
+workspace = true
+
+[dependencies]
+jsonrpsee-types = { workspace = true }
+jsonrpsee-core = { workspace = true, features = ["async-client"] }
+tokio = { workspace = true, features = ["net", "io-util"] }
+tower = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tracing-subscriber = { workspace = true }
+jsonrpsee-test-utils = { path = "../../test-utils" }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+serde_json = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
+
+[package.metadata.playground]
+all-features = true
