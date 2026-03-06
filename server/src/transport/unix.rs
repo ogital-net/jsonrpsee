@@ -10,6 +10,15 @@ use jsonrpsee_core::{
 };
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt};
 
+/// Framing format for Unix domain socket messages.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Framing {
+	/// Newline-delimited framing
+	Newline,
+	/// Netstring framing (size:data,)
+	Netstring,
+}
+
 /// Represents error that can occur when reading from a Unix domain socket.
 #[derive(Debug, thiserror::Error)]
 pub enum UnixError {
@@ -49,24 +58,24 @@ fn decode_netstring_size(buf: &[u8]) -> Option<(u32, usize)> {
 /// Read data from a Unix domain socket.
 /// Supports both netstring-framed requests (size:data,) and newline-delimited requests.
 ///
-/// Returns `Ok((bytes, single))` if the body was in valid size range; and a bool indicating whether the JSON-RPC
-/// request is a single or a batch.
+/// Returns `Ok((bytes, single, framing))` if the body was in valid size range; a bool indicating whether the JSON-RPC
+/// request is a single or a batch; and the framing format used.
 /// Returns `Err` if the body was too large or the body couldn't be read.
-pub async fn read_body<S>(stream: S, max_body_size: u32) -> Result<(Vec<u8>, bool), UnixError>
+pub async fn read_body<S>(stream: S, max_body_size: u32) -> Result<(Vec<u8>, bool, Framing), (UnixError, Framing)>
 where
 	S: tokio::io::AsyncRead + Unpin,
 {
 	let mut reader = tokio::io::BufReader::new(stream);
 
 	// Peek up to 11 bytes to check if this is a netstring-framed request
-	let buf = reader.fill_buf().await?;
+	let buf = reader.fill_buf().await.map_err(|e| (e.into(), Framing::Newline))?;
 	let len = std::cmp::min(buf.len(), 11); // 4294967295 + ':;
 
 	// Try to decode as netstring
 	if let Some((size, colon_idx)) = decode_netstring_size(&buf[..len]) {
 		// Netstring format: size:data,
 		if size > max_body_size {
-			return Err(UnixError::TooLarge);
+			return Err((UnixError::TooLarge, Framing::Netstring));
 		}
 
 		// Discard the size prefix and colon
@@ -76,16 +85,16 @@ where
 		let mut data: Vec<u8> = Vec::with_capacity(size as usize + 1);
 		if let Err(e) = reader.read_exact(unsafe { std::mem::transmute(data.spare_capacity_mut()) }).await {
 			if e.kind() == std::io::ErrorKind::UnexpectedEof {
-				return Err(UnixError::Malformed);
+				return Err((UnixError::Malformed, Framing::Netstring));
 			}
-			return Err(UnixError::Io(e));
+			return Err((UnixError::Io(e), Framing::Netstring));
 		}
 		// SAFETY: buffer was filled to capacity
 		unsafe { data.set_len(data.capacity()) };
 
 		// Verify trailing comma
 		if data[size as usize] != b',' {
-			return Err(UnixError::Malformed);
+			return Err((UnixError::Malformed, Framing::Netstring));
 		}
 
 		// Truncate to remove trailing comma (avoids copy)
@@ -94,7 +103,7 @@ where
 		let is_single = match data[0] {
 			b'{' => true,
 			b'[' => false,
-			_ => return Err(UnixError::Malformed),
+			_ => return Err((UnixError::Malformed, Framing::Netstring)),
 		};
 
 		tracing::trace!(
@@ -103,7 +112,7 @@ where
 			std::str::from_utf8(&data).unwrap_or("Invalid UTF-8 data")
 		);
 
-		return Ok((data, is_single));
+		return Ok((data, is_single, Framing::Netstring));
 	}
 
 	// Fall back to newline-delimited reading
@@ -111,16 +120,16 @@ where
 	//let mut limited_reader = tokio::io::BufReader::new(limited_reader);
 	let mut buffer = Vec::with_capacity(4 * 1024);
 
-	let bytes_read = limited_reader.read_until(b'\n', &mut buffer).await?;
+	let bytes_read = limited_reader.read_until(b'\n', &mut buffer).await.map_err(|e| (e.into(), Framing::Newline))?;
 
 	if bytes_read == 0 {
-		return Err(UnixError::Malformed);
+		return Err((UnixError::Malformed, Framing::Newline));
 	}
 
 	// Check if we hit the size limit without finding a newline
 	// If we read exactly max_body_size and the last byte is not '\n', the message is too large
 	if bytes_read as u32 == max_body_size && buffer.last() != Some(&b'\n') {
-		return Err(UnixError::TooLarge);
+		return Err((UnixError::TooLarge, Framing::Newline));
 	}
 
 	// Remove trailing newline if present
@@ -134,7 +143,7 @@ where
 	let is_single = match first_non_whitespace {
 		Some(b'{') => true,
 		Some(b'[') => false,
-		_ => return Err(UnixError::Malformed),
+		_ => return Err((UnixError::Malformed, Framing::Newline)),
 	};
 
 	tracing::trace!(
@@ -143,7 +152,7 @@ where
 		std::str::from_utf8(&buffer).unwrap_or("Invalid UTF-8 data")
 	);
 
-	Ok((buffer, is_single))
+	Ok((buffer, is_single, Framing::Newline))
 }
 
 /// Make JSON-RPC Unix domain socket call with a [`RpcServiceBuilder`]
@@ -174,12 +183,23 @@ where
 		RpcServiceCfg::OnlyCalls,
 	));
 
-	let rp = call_with_service(stream, batch_requests_config, max_request_body_size, rpc_service).await;
+	let (rp, framing) = call_with_service(stream, batch_requests_config, max_request_body_size, rpc_service).await;
 
 	drop(conn);
 
-	dbg!(&rp);
-	stream.write_all(rp.as_bytes()).await?;
+	// Write response with appropriate framing
+	match framing {
+		Framing::Netstring => {
+			let bytes = rp.as_bytes();
+			stream.write_all(format!("{}:", bytes.len()).as_bytes()).await?;
+			stream.write_all(bytes).await?;
+			stream.write_all(b",").await?;
+		}
+		Framing::Newline => {
+			stream.write_all(rp.as_bytes()).await?;
+			stream.write_all(b"\n").await?;
+		}
+	}
 
 	Ok(())
 }
@@ -192,7 +212,7 @@ pub async fn call_with_service<S, IO>(
 	batch_config: BatchRequestConfig,
 	max_request_size: u32,
 	rpc_service: S,
-) -> String
+) -> (String, Framing)
 where
 	S: RpcServiceT<
 			MethodResponse = MethodResponse,
@@ -201,18 +221,18 @@ where
 		> + Send,
 	IO: tokio::io::AsyncRead + Unpin,
 {
-	let (body, is_single) = match read_body(stream, max_request_size).await {
+	let (body, is_single, framing) = match read_body(stream, max_request_size).await {
 		Ok(r) => r,
-		Err(UnixError::TooLarge) => return response::too_large(max_request_size),
-		Err(UnixError::Malformed) => return response::malformed(),
-		Err(UnixError::Io(e)) => {
+		Err((UnixError::TooLarge, framing)) => return (response::too_large(max_request_size), framing),
+		Err((UnixError::Malformed, framing)) => return (response::malformed(), framing),
+		Err((UnixError::Io(e), framing)) => {
 			tracing::warn!(target: LOG_TARGET, "Internal error reading request body: {}", e);
-			return response::internal_error();
+			return (response::internal_error(), framing);
 		}
 	};
 
 	let rp = handle_rpc_call(&body, is_single, batch_config, &rpc_service, http::Extensions::new()).await;
-	response::from_method_response(rp)
+	(response::from_method_response(rp), framing)
 }
 
 /// Unix response helpers.
@@ -330,7 +350,7 @@ mod tests {
 		});
 
 		let result = read_body(server, 100).await;
-		assert!(matches!(result, Err(UnixError::TooLarge)));
+		assert!(matches!(result, Err((UnixError::TooLarge, Framing::Netstring))));
 	}
 
 	#[tokio::test]
@@ -345,7 +365,7 @@ mod tests {
 		});
 
 		let result = read_body(server, 1024).await;
-		assert!(matches!(result, Err(UnixError::Malformed)));
+		assert!(matches!(result, Err((UnixError::Malformed, Framing::Netstring))));
 	}
 
 	#[tokio::test]
@@ -362,6 +382,7 @@ mod tests {
 		let result = read_body(server, 1024).await.unwrap();
 		assert_eq!(result.0, json.as_bytes());
 		assert_eq!(result.1, true); // is_single
+		assert_eq!(result.2, Framing::Newline);
 	}
 
 	#[tokio::test]
@@ -378,6 +399,7 @@ mod tests {
 		let result = read_body(server, 1024).await.unwrap();
 		assert_eq!(result.0, json.as_bytes());
 		assert_eq!(result.1, false); // is_batch
+		assert_eq!(result.2, Framing::Newline);
 	}
 
 	#[tokio::test]
@@ -392,7 +414,7 @@ mod tests {
 		});
 
 		let result = read_body(server, 100).await;
-		assert!(matches!(result, Err(UnixError::TooLarge)));
+		assert!(matches!(result, Err((UnixError::TooLarge, Framing::Newline))));
 	}
 
 	#[tokio::test]
@@ -406,7 +428,7 @@ mod tests {
 		});
 
 		let result = read_body(server, 1024).await;
-		assert!(matches!(result, Err(UnixError::Malformed)));
+		assert!(matches!(result, Err((UnixError::Malformed, Framing::Newline))));
 	}
 
 	#[tokio::test]
@@ -415,7 +437,7 @@ mod tests {
 		drop(client); // Close the writer side
 
 		let result = read_body(server, 1024).await;
-		assert!(matches!(result, Err(UnixError::Malformed)));
+		assert!(matches!(result, Err((UnixError::Malformed, Framing::Newline))));
 	}
 
 	#[tokio::test]
@@ -431,5 +453,6 @@ mod tests {
 
 		let result = read_body(server, 1024).await.unwrap();
 		assert_eq!(result.1, true); // is_single (should skip leading whitespace)
+		assert_eq!(result.2, Framing::Newline);
 	}
 }

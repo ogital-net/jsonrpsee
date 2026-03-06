@@ -39,6 +39,7 @@ use jsonrpsee::server::unix::call_with_service_builder;
 use jsonrpsee::server::{ConnectionGuard, ConnectionState, ServerConfig, ServerHandle, StopHandle, stop_channel};
 use jsonrpsee::types::{ErrorObject, ErrorObjectOwned, Id, Request};
 use jsonrpsee::{MethodResponse, Methods};
+use jsonrpsee_unix_client::UnixClientBuilder;
 use tokio::net::UnixListener;
 use tokio::sync::mpsc;
 use tokio::sync::Mutex as AsyncMutex;
@@ -119,7 +120,7 @@ where
 	}
 }
 
-#[rpc(server)]
+#[rpc(server, client)]
 pub trait Rpc {
 	#[method(name = "say_hello")]
 	async fn say_hello(&self) -> Result<String, ErrorObjectOwned>;
@@ -154,6 +155,13 @@ async fn main() -> anyhow::Result<()> {
 	let _ = std::fs::remove_file(socket_path);
 
 	let handle = run_server(socket_path).await?;
+
+    let client = UnixClientBuilder::default().build(socket_path).await.unwrap();
+    let res = client.say_hello().await.unwrap();
+    dbg!(res);
+    let res = client.say_hello().await.unwrap();
+    dbg!(res);
+    
 
 	// Make some test calls using netcat or socat
 	tracing::info!("Unix socket server running at: {}", socket_path);
@@ -251,7 +259,7 @@ async fn run_server(socket_path: &str) -> anyhow::Result<ServerHandle> {
 
 				// Handle the connection, with rate limiting
 				tokio::select! {
-					// Process the RPC call
+					// Process the RPC call (handles multiple requests on same connection)
 					result = call_with_service_builder(&mut stream, server_cfg, conn, methods, rpc_service) => {
 						if let Err(e) = result {
 							tracing::error!("Error handling Unix socket connection: {:?}", e);

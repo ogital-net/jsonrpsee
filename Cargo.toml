@@ -3,6 +3,7 @@ members = [
 	"benches",
 	"client/http-client",
 	"client/transport",
+	"client/unix-client",
 	"client/wasm-client",
 	"client/ws-client",
 	"core",
@@ -38,6 +39,7 @@ jsonrpsee-http-client = { path = "client/http-client", version = "0.26.0" }
 jsonrpsee-proc-macros = { path = "proc-macros", version = "0.26.0" }
 jsonrpsee-server = { path = "server", version = "0.26.0" }
 jsonrpsee-types = { path = "types", version = "0.26.0" }
+jsonrpsee-unix-client = { path = "client/unix-client", version = "0.26.0" }
 jsonrpsee-wasm-client = { path = "client/wasm-client", version = "0.26.0" }
 jsonrpsee-ws-client = { path = "client/ws-client", version = "0.26.0" }
 
