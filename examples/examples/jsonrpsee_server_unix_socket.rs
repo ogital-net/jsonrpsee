@@ -35,7 +35,7 @@ use std::sync::Arc;
 
 use jsonrpsee::core::middleware::{Batch, Notification, RpcServiceBuilder, RpcServiceT};
 use jsonrpsee::proc_macros::rpc;
-use jsonrpsee::server::unix::call_with_service_builder;
+use jsonrpsee::server::stream::serve_with_service_builder;
 use jsonrpsee::server::{ConnectionGuard, ConnectionState, ServerConfig, ServerHandle, StopHandle, stop_channel};
 use jsonrpsee::types::{ErrorObject, ErrorObjectOwned, Id, Request};
 use jsonrpsee::{MethodResponse, Methods};
@@ -260,7 +260,7 @@ async fn run_server(socket_path: &str) -> anyhow::Result<ServerHandle> {
 				// Handle the connection, with rate limiting
 				tokio::select! {
 					// Process the RPC call (handles multiple requests on same connection)
-					result = call_with_service_builder(&mut stream, server_cfg, conn, methods, rpc_service) => {
+					result = serve_with_service_builder(&mut stream, server_cfg, conn, methods, rpc_service) => {
 						if let Err(e) = result {
 							tracing::error!("Error handling Unix socket connection: {:?}", e);
 						}

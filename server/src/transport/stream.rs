@@ -21,7 +21,7 @@ pub enum Framing {
 
 /// Represents error that can occur when reading from a Unix domain socket.
 #[derive(Debug, thiserror::Error)]
-pub enum UnixError {
+pub enum StreamError {
 	/// The message was too large.
 	#[error("The message was too big")]
 	TooLarge,
@@ -61,7 +61,7 @@ fn decode_netstring_size(buf: &[u8]) -> Option<(u32, usize)> {
 /// Returns `Ok((bytes, single, framing))` if the body was in valid size range; a bool indicating whether the JSON-RPC
 /// request is a single or a batch; and the framing format used.
 /// Returns `Err` if the body was too large or the body couldn't be read.
-pub async fn read_body<S>(stream: S, max_body_size: u32) -> Result<(Vec<u8>, bool, Framing), (UnixError, Framing)>
+pub async fn read_body<S>(stream: S, max_body_size: u32) -> Result<(Vec<u8>, bool, Framing), (StreamError, Framing)>
 where
 	S: tokio::io::AsyncRead + Unpin,
 {
@@ -75,7 +75,7 @@ where
 	if let Some((size, colon_idx)) = decode_netstring_size(&buf[..len]) {
 		// Netstring format: size:data,
 		if size > max_body_size {
-			return Err((UnixError::TooLarge, Framing::Netstring));
+			return Err((StreamError::TooLarge, Framing::Netstring));
 		}
 
 		// Discard the size prefix and colon
@@ -85,16 +85,16 @@ where
 		let mut data: Vec<u8> = Vec::with_capacity(size as usize + 1);
 		if let Err(e) = reader.read_exact(unsafe { std::mem::transmute(data.spare_capacity_mut()) }).await {
 			if e.kind() == std::io::ErrorKind::UnexpectedEof {
-				return Err((UnixError::Malformed, Framing::Netstring));
+				return Err((StreamError::Malformed, Framing::Netstring));
 			}
-			return Err((UnixError::Io(e), Framing::Netstring));
+			return Err((StreamError::Io(e), Framing::Netstring));
 		}
 		// SAFETY: buffer was filled to capacity
 		unsafe { data.set_len(data.capacity()) };
 
 		// Verify trailing comma
 		if data[size as usize] != b',' {
-			return Err((UnixError::Malformed, Framing::Netstring));
+			return Err((StreamError::Malformed, Framing::Netstring));
 		}
 
 		// Truncate to remove trailing comma (avoids copy)
@@ -103,7 +103,7 @@ where
 		let is_single = match data[0] {
 			b'{' => true,
 			b'[' => false,
-			_ => return Err((UnixError::Malformed, Framing::Netstring)),
+			_ => return Err((StreamError::Malformed, Framing::Netstring)),
 		};
 
 		tracing::trace!(
@@ -123,13 +123,13 @@ where
 	let bytes_read = limited_reader.read_until(b'\n', &mut buffer).await.map_err(|e| (e.into(), Framing::Newline))?;
 
 	if bytes_read == 0 {
-		return Err((UnixError::Malformed, Framing::Newline));
+		return Err((StreamError::Malformed, Framing::Newline));
 	}
 
 	// Check if we hit the size limit without finding a newline
 	// If we read exactly max_body_size and the last byte is not '\n', the message is too large
 	if bytes_read as u32 == max_body_size && buffer.last() != Some(&b'\n') {
-		return Err((UnixError::TooLarge, Framing::Newline));
+		return Err((StreamError::TooLarge, Framing::Newline));
 	}
 
 	// Remove trailing newline if present
@@ -143,7 +143,7 @@ where
 	let is_single = match first_non_whitespace {
 		Some(b'{') => true,
 		Some(b'[') => false,
-		_ => return Err((UnixError::Malformed, Framing::Newline)),
+		_ => return Err((StreamError::Malformed, Framing::Newline)),
 	};
 
 	tracing::trace!(
@@ -157,8 +157,8 @@ where
 
 /// Make JSON-RPC Unix domain socket call with a [`RpcServiceBuilder`]
 ///
-/// Fails if the request was a malformed JSON-RPC request.
-pub async fn call_with_service_builder<L, IO>(
+/// Handles multiple requests on the same stream until the client disconnects.
+pub async fn serve_with_service_builder<L, IO>(
 	stream: &mut IO,
 	server_cfg: ServerConfig,
 	conn: ConnectionState,
@@ -183,24 +183,37 @@ where
 		RpcServiceCfg::OnlyCalls,
 	));
 
-	let (rp, framing) = call_with_service(stream, batch_requests_config, max_request_body_size, rpc_service).await;
+	// Handle multiple requests on the same stream
+	loop {
+		let (rp, framing) = call_with_service(stream, batch_requests_config, max_request_body_size, &rpc_service).await;
 
-	drop(conn);
+		// Write response with appropriate framing
+		let write_result = match framing {
+			Framing::Netstring => {
+				let bytes = rp.as_bytes();
+				async {
+					stream.write_all(format!("{}:", bytes.len()).as_bytes()).await?;
+					stream.write_all(bytes).await?;
+					stream.write_all(b",").await
+				}
+				.await
+			}
+			Framing::Newline => {
+				async {
+					stream.write_all(rp.as_bytes()).await?;
+					stream.write_all(b"\n").await
+				}
+				.await
+			}
+		};
 
-	// Write response with appropriate framing
-	match framing {
-		Framing::Netstring => {
-			let bytes = rp.as_bytes();
-			stream.write_all(format!("{}:", bytes.len()).as_bytes()).await?;
-			stream.write_all(bytes).await?;
-			stream.write_all(b",").await?;
-		}
-		Framing::Newline => {
-			stream.write_all(rp.as_bytes()).await?;
-			stream.write_all(b"\n").await?;
+		// If write failed, client disconnected or error occurred
+		if write_result.is_err() {
+			break;
 		}
 	}
 
+	drop(conn);
 	Ok(())
 }
 
@@ -211,7 +224,7 @@ pub async fn call_with_service<S, IO>(
 	stream: &mut IO,
 	batch_config: BatchRequestConfig,
 	max_request_size: u32,
-	rpc_service: S,
+	rpc_service: &S,
 ) -> (String, Framing)
 where
 	S: RpcServiceT<
@@ -223,15 +236,15 @@ where
 {
 	let (body, is_single, framing) = match read_body(stream, max_request_size).await {
 		Ok(r) => r,
-		Err((UnixError::TooLarge, framing)) => return (response::too_large(max_request_size), framing),
-		Err((UnixError::Malformed, framing)) => return (response::malformed(), framing),
-		Err((UnixError::Io(e), framing)) => {
+		Err((StreamError::TooLarge, framing)) => return (response::too_large(max_request_size), framing),
+		Err((StreamError::Malformed, framing)) => return (response::malformed(), framing),
+		Err((StreamError::Io(e), framing)) => {
 			tracing::warn!(target: LOG_TARGET, "Internal error reading request body: {}", e);
 			return (response::internal_error(), framing);
 		}
 	};
 
-	let rp = handle_rpc_call(&body, is_single, batch_config, &rpc_service, http::Extensions::new()).await;
+	let rp = handle_rpc_call(&body, is_single, batch_config, rpc_service, http::Extensions::new()).await;
 	(response::from_method_response(rp), framing)
 }
 
@@ -350,7 +363,7 @@ mod tests {
 		});
 
 		let result = read_body(server, 100).await;
-		assert!(matches!(result, Err((UnixError::TooLarge, Framing::Netstring))));
+		assert!(matches!(result, Err((StreamError::TooLarge, Framing::Netstring))));
 	}
 
 	#[tokio::test]
@@ -365,7 +378,7 @@ mod tests {
 		});
 
 		let result = read_body(server, 1024).await;
-		assert!(matches!(result, Err((UnixError::Malformed, Framing::Netstring))));
+		assert!(matches!(result, Err((StreamError::Malformed, Framing::Netstring))));
 	}
 
 	#[tokio::test]
@@ -414,7 +427,7 @@ mod tests {
 		});
 
 		let result = read_body(server, 100).await;
-		assert!(matches!(result, Err((UnixError::TooLarge, Framing::Newline))));
+		assert!(matches!(result, Err((StreamError::TooLarge, Framing::Newline))));
 	}
 
 	#[tokio::test]
@@ -428,7 +441,7 @@ mod tests {
 		});
 
 		let result = read_body(server, 1024).await;
-		assert!(matches!(result, Err((UnixError::Malformed, Framing::Newline))));
+		assert!(matches!(result, Err((StreamError::Malformed, Framing::Newline))));
 	}
 
 	#[tokio::test]
@@ -437,7 +450,7 @@ mod tests {
 		drop(client); // Close the writer side
 
 		let result = read_body(server, 1024).await;
-		assert!(matches!(result, Err((UnixError::Malformed, Framing::Newline))));
+		assert!(matches!(result, Err((StreamError::Malformed, Framing::Newline))));
 	}
 
 	#[tokio::test]
