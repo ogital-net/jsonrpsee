@@ -26,11 +26,9 @@
 
 //! Subscription ID providers.
 
-use rand::distributions::Alphanumeric;
-use rand::Rng;
-
 use crate::traits::IdProvider;
 use jsonrpsee_types::SubscriptionId;
+use rand::Rng;
 
 /// Generates random integers as subscription ID.
 #[derive(Debug, Copy, Clone)]
@@ -39,7 +37,7 @@ pub struct RandomIntegerIdProvider;
 impl IdProvider for RandomIntegerIdProvider {
 	fn next_id(&self) -> SubscriptionId<'static> {
 		const JS_NUM_MASK: u64 = !0 >> 11;
-		(rand::random::<u64>() & JS_NUM_MASK).into()
+		(rand::rng().next_u64() & JS_NUM_MASK).into()
 	}
 }
 
@@ -58,8 +56,8 @@ impl RandomStringIdProvider {
 
 impl IdProvider for RandomStringIdProvider {
 	fn next_id(&self) -> SubscriptionId<'static> {
-		let mut rng = rand::thread_rng();
-		(&mut rng).sample_iter(Alphanumeric).take(self.len).map(char::from).collect::<String>().into()
+		let mut rng = rand::rng();
+		rand_utils::rand_string(&mut rng, self.len).into()
 	}
 }
 
