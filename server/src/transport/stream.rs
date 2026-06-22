@@ -28,6 +28,9 @@ pub enum StreamError {
 	/// Malformed request
 	#[error("Malformed request")]
 	Malformed,
+	/// Client disconnected (EOF on read).
+	#[error("Client disconnected")]
+	Disconnected,
 	/// I/O error
 	#[error("I/O error: {0}")]
 	Io(#[from] std::io::Error),
@@ -69,6 +72,10 @@ where
 
 	// Peek up to 11 bytes to check if this is a netstring-framed request
 	let buf = reader.fill_buf().await.map_err(|e| (e.into(), Framing::Newline))?;
+	// Empty buffer means the client disconnected (EOF).
+	if buf.is_empty() {
+		return Err((StreamError::Disconnected, Framing::Newline));
+	}
 	let len = std::cmp::min(buf.len(), 11); // 4294967295 + ':;
 
 	// Try to decode as netstring
@@ -123,7 +130,7 @@ where
 	let bytes_read = limited_reader.read_until(b'\n', &mut buffer).await.map_err(|e| (e.into(), Framing::Newline))?;
 
 	if bytes_read == 0 {
-		return Err((StreamError::Malformed, Framing::Newline));
+		return Err((StreamError::Disconnected, Framing::Newline));
 	}
 
 	// Check if we hit the size limit without finding a newline
@@ -185,7 +192,10 @@ where
 
 	// Handle multiple requests on the same stream
 	loop {
-		let (rp, framing) = call_with_service(stream, batch_requests_config, max_request_body_size, &rpc_service).await;
+		let (rp, framing) = match call_with_service_inner(stream, batch_requests_config, max_request_body_size, &rpc_service).await {
+			Some(v) => v,
+			None => break, // client disconnected
+		};
 
 		// Write response with appropriate framing
 		let write_result = match framing {
@@ -217,7 +227,40 @@ where
 	Ok(())
 }
 
-/// Make JSON-RPC stream call with a service [`RpcServiceT`]
+/// Make JSON-RPC stream call with a service [`RpcServiceT`].
+///
+/// Returns `None` if the client disconnected (EOF).
+/// Returns `Some((response, framing))` otherwise.
+async fn call_with_service_inner<S, IO>(
+	stream: &mut IO,
+	batch_config: BatchRequestConfig,
+	max_request_size: u32,
+	rpc_service: &S,
+) -> Option<(String, Framing)>
+where
+	S: RpcServiceT<
+			MethodResponse = MethodResponse,
+			BatchResponse = MethodResponse,
+			NotificationResponse = MethodResponse,
+		> + Send,
+	IO: tokio::io::AsyncRead + Unpin,
+{
+	let (body, is_single, framing) = match read_body(stream, max_request_size).await {
+		Ok(r) => r,
+		Err((StreamError::Disconnected, _)) => return None,
+		Err((StreamError::TooLarge, framing)) => return Some((response::too_large(max_request_size), framing)),
+		Err((StreamError::Malformed, framing)) => return Some((response::malformed(), framing)),
+		Err((StreamError::Io(e), framing)) => {
+			tracing::warn!(target: LOG_TARGET, "Internal error reading request body: {}", e);
+			return Some((response::internal_error(), framing));
+		}
+	};
+
+	let rp = handle_rpc_call(&body, is_single, batch_config, rpc_service, http::Extensions::new()).await;
+	Some((response::from_method_response(rp), framing))
+}
+
+/// Make JSON-RPC stream call with a service [`RpcServiceT`].
 ///
 /// Fails if the request was a malformed JSON-RPC request.
 pub async fn call_with_service<S, IO>(
@@ -234,18 +277,10 @@ where
 		> + Send,
 	IO: tokio::io::AsyncRead + Unpin,
 {
-	let (body, is_single, framing) = match read_body(stream, max_request_size).await {
-		Ok(r) => r,
-		Err((StreamError::TooLarge, framing)) => return (response::too_large(max_request_size), framing),
-		Err((StreamError::Malformed, framing)) => return (response::malformed(), framing),
-		Err((StreamError::Io(e), framing)) => {
-			tracing::warn!(target: LOG_TARGET, "Internal error reading request body: {}", e);
-			return (response::internal_error(), framing);
-		}
-	};
-
-	let rp = handle_rpc_call(&body, is_single, batch_config, rpc_service, http::Extensions::new()).await;
-	(response::from_method_response(rp), framing)
+	match call_with_service_inner(stream, batch_config, max_request_size, rpc_service).await {
+		Some(v) => v,
+		None => (response::malformed(), Framing::Newline),
+	}
 }
 
 /// Stream response helpers.
@@ -450,7 +485,7 @@ mod tests {
 		drop(client); // Close the writer side
 
 		let result = read_body(server, 1024).await;
-		assert!(matches!(result, Err((StreamError::Malformed, Framing::Newline))));
+		assert!(matches!(result, Err((StreamError::Disconnected, Framing::Newline))));
 	}
 
 	#[tokio::test]
